@@ -20,6 +20,7 @@ const senders = require('../lib/senders');
 const {LinkId} = require('./links');
 const feedcheck = require('../lib/feedcheck');
 const contextHelpers = require('../lib/context-helpers');
+const {convertFileURLs} = require('../lib/campaign-content');
 
 const {EntityActivityType, CampaignActivityType} = require('../../shared/activity-log');
 const activityLog = require('../lib/activity-log');
@@ -430,35 +431,6 @@ async function _validateAndPreprocess(tx, context, entity, isCreate, content) {
     }
 }
 
-function convertFileURLs(sourceCustom, fromEntityType, fromEntityId, toEntityType, toEntityId) {
-
-    function convertText(text) {
-        if (text) {
-            const fromUrl = `/files/${fromEntityType}/file/${fromEntityId}`;
-            const toUrl = `/files/${toEntityType}/file/${toEntityId}`;
-
-            const encodedFromUrl = encodeURIComponent(fromUrl);
-            const encodedToUrl = encodeURIComponent(toUrl);
-
-            text = text.split('[URL_BASE]' + fromUrl).join('[URL_BASE]' + toUrl);
-            text = text.split('[SANDBOX_URL_BASE]' + fromUrl).join('[SANDBOX_URL_BASE]' + toUrl);
-            text = text.split('[ENCODED_URL_BASE]' + encodedFromUrl).join('[ENCODED_URL_BASE]' + encodedToUrl);
-            text = text.split('[ENCODED_SANDBOX_URL_BASE]' + encodedFromUrl).join('[ENCODED_SANDBOX_URL_BASE]' + encodedToUrl);
-        }
-
-        return text;
-    }
-
-    sourceCustom.html = convertText(sourceCustom.html);
-    sourceCustom.text = convertText(sourceCustom.text);
-
-    if (sourceCustom.type === 'mosaico' || sourceCustom.type === 'mosaicoWithFsTemplate') {
-        sourceCustom.data.model = convertText(sourceCustom.data.model);
-        sourceCustom.data.model = convertText(sourceCustom.data.model);
-        sourceCustom.data.metadata = convertText(sourceCustom.data.metadata);
-    }
-}
-
 async function _createTx(tx, context, entity, content) {
     return await knex.transaction(async tx => {
         await shares.enforceEntityPermissionTx(tx, context, 'namespace', entity.namespace, 'createCampaign');
@@ -736,9 +708,7 @@ async function _changeStatusByMessageTx(tx, context, message, subscriptionStatus
 
         const statusField = statusFieldMapping[subscriptionStatus];
 
-        if (message.status === SubscriptionStatus.SUBSCRIBED) {
-            await tx('campaigns').increment(statusField, 1).where('id', message.campaign);
-        }
+        await tx('campaigns').increment(statusField, 1).where('id', message.campaign);
 
         await tx('campaign_messages')
             .where('id', message.id)
@@ -754,7 +724,11 @@ async function changeStatusByCampaignCidAndSubscriptionIdTx(tx, context, campaig
     const message = await tx('campaign_messages')
         .innerJoin('campaigns', 'campaign_messages.campaign', 'campaigns.id')
         .where('campaigns.cid', campaignCid)
-        .where({subscription: subscriptionId, list: listId});
+        .where({subscription: subscriptionId, list: listId})
+        .select([
+            'campaign_messages.id', 'campaign_messages.campaign', 'campaign_messages.list', 'campaign_messages.subscription', 'campaign_messages.status'
+        ])
+        .first();
 
     if (!message) {
         throw new Error('Invalid campaign.')
