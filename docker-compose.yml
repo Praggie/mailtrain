@@ -10,6 +10,8 @@ services:
     - MYSQL_PASSWORD=mailtrain
     volumes:
     - mysql-data:/var/lib/mysql
+    ports:
+    - "3006:3006"
 
   redis:
     image: redis:5
