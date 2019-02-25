@@ -17,11 +17,15 @@ services:
     image: redis:5
     volumes:
     - redis-data:/data
+    ports:
+    - "6379:6379"
 
   mongo:
     image: mongo:4-xenial
     volumes:
     - mongo-data:/data/db
+    ports:
+    - "27017:27017"
 
   mailtrain:
     image: mailtrain/mailtrain:latest
